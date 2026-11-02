@@ -10,6 +10,8 @@
     "start": "node --env-file-if-exists=.env.local server/index.ts",
     "db:migrate": "node --env-file-if-exists=.env.local server/scripts/db-migrate.ts",
     "db:seed": "node --env-file-if-exists=.env.local server/scripts/db-seed.ts",
+    "db:test": "docker run -d --rm -e POSTGRES_PASSWORD=test -p 5499:5432 postgres:17-alpine",
+    "db:local:init": "pnpm db:test && pnpm db:seed --wait",
     "test:unit": "vitest",
     "test:e2e": "playwright test",
     "build-only": "vite build",

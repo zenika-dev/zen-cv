@@ -21,7 +21,7 @@ In production, a single process serves both the API and the built front end. It 
   cloud-sql-proxy zen-cv-513014:europe-west9:dev-zen-cv --port 5432
   ```
 
-  Any other Postgres works too, for example `docker run -e POSTGRES_PASSWORD=dev -p 5432:5432 postgres:17`.
+  Any other Postgres works too, for example a throwaway one in Docker: see [Local environment with Docker](#local-environment-with-docker).
 
 ### Setup
 
@@ -36,6 +36,30 @@ pnpm dev
 
 Then open http://localhost:5173.
 
+### Local environment with Docker
+
+To work without Cloud SQL, `pnpm db:test` starts a throwaway Postgres in Docker on port 5499. The same database serves the app and the tests: the app uses the `public` schema, the tests their own (`test_…`, then `e2e`), so they don't get in each other's way.
+
+Once, in `.env.local`:
+
+```sh
+DATABASE_URL=postgresql://postgres:test@localhost:5499/postgres
+TEST_DATABASE_URL=postgresql://postgres:test@localhost:5499/postgres
+DEV_USER_EMAIL=prenom.nom@zenika.com    # the signed-in user (there is no IAP locally)
+DEV_USER_TITLE=Business Developer       # optional: lets you edit every CV
+```
+
+Then, for each session:
+
+```sh
+pnpm db:local:init    # starts Postgres, waits for it, creates the tables and loads the sample CVs
+pnpm dev
+```
+
+`db:local:init` is `pnpm db:test` followed by `pnpm db:seed --wait`: right after `docker run`, Postgres needs a few seconds before it accepts connections, so `--wait` retries for up to 30 seconds.
+
+The container has no volume and is started with `--rm`, so everything is lost when it stops (`docker stop`, a reboot…); `pnpm db:seed` then starts you over from the sample CVs. To stop it, find its name with `docker ps`, then run `docker stop <name>`. Running `pnpm db:test` again while it's up fails with "port is already allocated".
+
 ### Scripts
 
 | Script | What it does |
@@ -44,8 +68,12 @@ Then open http://localhost:5173.
 | `pnpm build` | Type-checks (`vue-tsc`) and builds the front end into `dist/`. |
 | `pnpm start` | Production server: the API plus `dist/`, on `PORT` (default 3000). Run `pnpm build` first. |
 | `pnpm db:migrate` | Creates the database tables. Safe to run more than once. |
-| `pnpm db:seed` | Inserts the CVs from `server/db/seed.json` that don't exist yet. |
-| `pnpm test:unit` | Vitest, in watch mode. |
+| `pnpm db:seed` | Creates the tables if needed, then inserts the CVs from `server/db/seed.json` that don't exist yet. |
+| `pnpm db:test` | Starts a throwaway Postgres in Docker on port 5499 (see [Local environment with Docker](#local-environment-with-docker)). |
+| `pnpm db:local:init` | `db:test`, then `db:seed --wait` once Postgres accepts connections. |
+| `pnpm proxy` | Cloud SQL Auth Proxy to the `dev` database. |
+| `pnpm test:unit` | Vitest, in watch mode. The Postgres tests run when `TEST_DATABASE_URL` is set. |
+| `pnpm test:e2e` | Playwright end-to-end tests. Needs `TEST_DATABASE_URL`. |
 | `pnpm lint` | oxlint, ESLint and stylelint, all with `--fix`. |
 | `pnpm format` | Prettier on `src/`. |
 
@@ -310,12 +338,7 @@ Vitest runs two projects (`vitest.config.ts`):
 
 Each run starts from the seed data, and nothing outside the `e2e` schema is touched. The first time, install the browser with `pnpm exec playwright install chromium`.
 
-Locally, any throwaway Postgres will do:
-
-```sh
-docker run -d --rm --name zen-cv-test-pg -e POSTGRES_PASSWORD=test -p 5499:5432 postgres:17-alpine
-# then in .env.local: TEST_DATABASE_URL=postgresql://postgres:test@localhost:5499/postgres
-```
+Locally, any throwaway Postgres will do, for example the one from `pnpm db:test` (see [Local environment with Docker](#local-environment-with-docker)).
 
 ## Deployment
 
